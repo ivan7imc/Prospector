@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prospector</title>
+<style>
+:root { --bg:#fff; --fg:#1a1a1a; --mut:#777; --line:#e4e4e4; --ok:#0a7d33; --acc:#1652d9; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#101014; --fg:#e8e8e8; --mut:#999; --line:#2a2a30; --ok:#4cc472; --acc:#7aa2ff; }
+}
+* { box-sizing:border-box; margin:0 }
+body { background:var(--bg); color:var(--fg); font:16px/1.5 system-ui,sans-serif;
+       max-width:680px; margin:0 auto; padding:40px 16px }
+h1 { font-size:1.5rem; margin-bottom:4px } h1 span{color:var(--acc)}
+.sub { color:var(--mut); font-size:.9rem; margin-bottom:24px }
+form { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:24px }
+input { flex:1; min-width:140px; padding:10px 12px; font:inherit;
+        border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--fg) }
+button { padding:10px 20px; font:inherit; border:0; border-radius:8px;
+         background:var(--acc); color:#fff; cursor:pointer }
+button:disabled { opacity:.5; cursor:wait }
+#prog { display:none; margin-bottom:24px }
+.bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden }
+.bar i { display:block; height:100%; width:0; background:var(--acc); transition:width .3s }
+#plog { color:var(--mut); font-size:.85rem; margin-top:6px; white-space:nowrap;
+        overflow:hidden; text-overflow:ellipsis }
+#resumo { display:none; gap:10px; margin-bottom:18px }
+.pill { flex:1; text-align:center; border:1px solid var(--line); border-radius:10px; padding:10px }
+.pill b { display:block; font-size:1.4rem }
+.pill small { color:var(--mut) }
+details { border:1px solid var(--line); border-radius:10px; margin-bottom:10px }
+summary { padding:12px 14px; cursor:pointer; font-weight:600 }
+.item { padding:10px 14px; border-top:1px solid var(--line); font-size:.92rem }
+.item b .nota { color:var(--ok); font-weight:600 }
+.item a { color:var(--acc); text-decoration:none; word-break:break-all }
+.item .mut { color:var(--mut) }
+#acoes { display:none; gap:8px; margin-top:16px }
+#acoes a { flex:1; text-align:center; padding:10px; border:1px solid var(--line);
+           border-radius:8px; color:var(--fg); text-decoration:none }
+#erro { display:none; color:#c0392b; margin-bottom:16px }
+</style>
+</head>
+<body>
+<h1>🔎 Prospec<span>tor</span></h1>
+<p class="sub">nicho + cidade → presença digital dos negócios locais (via Google Maps)</p>
+
+<form id="f">
+  <input id="nicho" placeholder="pizzaria" required>
+  <input id="cidade" placeholder="Poços de Caldas" required>
+  <button id="go">Prospectar</button>
+</form>
+
+<div id="erro"></div>
+<div id="prog"><div class="bar"><i id="fill"></i></div><div id="plog"></div></div>
+<div id="resumo" style="display:none"></div>
+<div id="listas"></div>
+<div id="acoes"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const EMO = {instagram:'📸', facebook:'👥', tiktok:'🎵', linktree:'🔗', whatsapp:'💬'};
+const tipo = u => u.includes('instagram') ? 'instagram' : u.includes('facebook')||u.includes('fb.com') ? 'facebook'
+  : u.includes('tiktok') ? 'tiktok' : u.includes('linktr.ee') ? 'linktree' : 'whatsapp';
+
+$('f').onsubmit = async e => {
+  e.preventDefault();
+  $('go').disabled = true; $('erro').style.display = 'none';
+  $('resumo').style.display = 'none'; $('listas').innerHTML = ''; $('acoes').style.display = 'none';
+  $('prog').style.display = 'block'; $('plog').textContent = 'iniciando...';
+  try {
+    const r = await fetch('/api/jobs', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({nicho: $('nicho').value.trim(), cidade: $('cidade').value.trim()})});
+    const {id, cache} = await r.json();
+    if (cache) { $('plog').textContent = 'resultado em cache ⚡'; return mostrar(id); }
+    const es = new EventSource(`/api/jobs/${id}/events`);
+    const pesos = {inicio:5, busca:25, fichas:45, sociais:25};
+    let base = 0, etapaAtual = '';
+    es.onmessage = ev => {
+      const d = JSON.parse(ev.data);
+      if (d.etapa === 'erro') { es.close(); return falha(d.msg); }
+      if (d.etapa === 'fim')  { es.close(); return mostrar(id); }
+      if (d.etapa !== etapaAtual) { base += pesos[etapaAtual] || 0; etapaAtual = d.etapa; }
+      const pct = base + (pesos[d.etapa] || 0) * Math.min(d.atual / (d.total || 1), 1);
+      $('fill').style.width = Math.min(pct, 97) + '%';
+      $('plog').textContent = `${d.etapa} · ${d.atual}/${d.total} · ${d.msg}`;
+    };
+    es.onerror = () => { es.close(); falha('conexão perdida'); };
+  } catch (err) { falha(err.message); }
+};
+
+function falha(msg) {
+  $('go').disabled = false; $('prog').style.display = 'none';
+  $('erro').textContent = '⚠ ' + msg; $('erro').style.display = 'block';
+}
+
+async function mostrar(id) {
+  const r = await (await fetch(`/api/jobs/${id}`)).json();
+  $('go').disabled = false; $('prog').style.display = 'none';
+  $('fill').style.width = '100%';
+  const s = r.resumo;
+  $('resumo').style.display = 'flex';
+  $('resumo').innerHTML = `
+    <div class="pill"><b>${s.com}</b><small>✅ com redes</small></div>
+    <div class="pill"><b>${s.so_site}</b><small>🌐 só site</small></div>
+    <div class="pill"><b>${s.sem}</b><small>❌ sem nada</small></div>`;
+  const g = {com:[], so_site:[], sem:[]};
+  r.lugares.forEach(l => g[l.sociais.length ? 'com' : l.website ? 'so_site' : 'sem'].push(l));
+  const ordena = a => a.sort((x,y) => parseFloat((y.nota||'0').replace(',','.')) - parseFloat((x.nota||'0').replace(',','.')));
+  const linha = l => {
+    const end = (l.categoria_endereco||'').split('·').pop().trim();
+    let h = `<div class="item"><b>${l.nome}${l.nota ? ` <span class="nota">⭐${l.nota}</span>` : ''}</b>`;
+    if (end) h += `<div class="mut">📍 ${end}${l.tel ? ' · 📞 ' + l.tel : ''}</div>`;
+    l.sociais.forEach(u => h += `<div>${EMO[tipo(u)]} <a href="${u}" target="_blank" rel="noopener">${u.replace(/^https?:\/\/(www\.)?/,'')}</a></div>`);
+    if (!l.sociais.length && l.website)
+      h += `<div>🌐 <a href="${l.website}" target="_blank" rel="noopener">${l.website.replace(/^https?:\/\/(www\.)?/,'').slice(0,60)}</a></div>`;
+    return h + '</div>';
+  };
+  $('listas').innerHTML = `
+    <details open><summary>✅ Com redes sociais (${g.com.length})</summary>${ordena(g.com).map(linha).join('')}</details>
+    <details><summary>🌐 Só site/cardápio (${g.so_site.length})</summary>${ordena(g.so_site).map(linha).join('')}</details>
+    <details><summary>❌ Sem presença digital (${g.sem.length})</summary>${ordena(g.sem).map(linha).join('')}</details>`;
+  $('acoes').style.display = 'flex';
+  $('acoes').innerHTML = `
+    <a href="/api/jobs/${id}/export?fmt=md" download>⬇ Markdown</a>
+    <a href="/api/jobs/${id}/export?fmt=csv" download>⬇ CSV</a>`;
+}
+</script>
+</body>
+</html>
