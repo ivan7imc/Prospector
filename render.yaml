@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: prospector
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/historico
+    envVars:
+      - key: LOW_MEM
+        value: "1"
+      - key: PARALELO
+        value: "1"
+      - key: LIMITE_MAX
+        value: "40"
+      - key: MALLOC_ARENA_MAX
+        value: "2"
+      # Neon (Postgres serverless) — crie o projeto em neon.tech e cole a
+      # connection string no dashboard do Render (sync: false pede input manual)
+      - key: DATABASE_URL
+        sync: false
+      # Se o Chromium ficar instável em single-process, desligue com:
+      # - key: SINGLE_PROC
+      #   value: "0"
+      # Camada de IA opcional (preencha no dashboard do Render):
+      # - key: LLM_BASE_URL
+      # - key: LLM_API_KEY
+      # - key: LLM_MODEL
