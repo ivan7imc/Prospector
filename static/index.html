@@ -36,8 +36,16 @@ summary { padding:12px 14px; cursor:pointer; font-weight:600 }
 .item a { color:var(--acc); text-decoration:none; word-break:break-all }
 .item .mut { color:var(--mut) }
 #acoes { display:none; gap:8px; margin-top:16px }
-#acoes a { flex:1; text-align:center; padding:10px; border:1px solid var(--line);
-           border-radius:8px; color:var(--fg); text-decoration:none }
+#acoes button { flex:1; text-align:center; padding:10px; border:1px solid var(--line);
+           border-radius:8px; color:var(--fg); background:transparent; cursor:pointer; font:inherit }
+#acoes button:disabled { opacity:.5; cursor:wait }
+#exportfb { display:none; margin-top:10px; font-size:.85rem; color:var(--mut) }
+#exportfb .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap }
+#exportfb .row b { color:var(--fg); word-break:break-all }
+#exportfb .row button, #exportfb .row a { padding:6px 12px; font:inherit; border:1px solid var(--line);
+  border-radius:8px; background:transparent; color:var(--fg); cursor:pointer; text-decoration:none }
+#exportfb textarea { display:none; width:100%; min-height:160px; margin-top:8px; font:12px/1.4 ui-monospace,monospace;
+  background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:8px }
 #erro { display:none; color:#c0392b; margin-bottom:16px }
 </style>
 </head>
@@ -56,17 +64,21 @@ summary { padding:12px 14px; cursor:pointer; font-weight:600 }
 <div id="resumo" style="display:none"></div>
 <div id="listas"></div>
 <div id="acoes"></div>
+<div id="exportfb"></div>
 
 <script>
 const $ = id => document.getElementById(id);
 const EMO = {instagram:'📸', facebook:'👥', tiktok:'🎵', linktree:'🔗', whatsapp:'💬'};
-const tipo = u => u.includes('instagram') ? 'instagram' : u.includes('facebook')||u.includes('fb.com') ? 'facebook'
-  : u.includes('tiktok') ? 'tiktok' : u.includes('linktr.ee') ? 'linktree' : 'whatsapp';
+const tipo = u => /instagram/i.test(u) ? 'instagram' : /facebook|fb\.com/i.test(u) ? 'facebook'
+  : /tiktok/i.test(u) ? 'tiktok' : /linktr\.ee/i.test(u) ? 'linktree' : /wa\.me|whatsapp/i.test(u) ? 'whatsapp' : null;
+let ultimo = null;
 
 $('f').onsubmit = async e => {
   e.preventDefault();
   $('go').disabled = true; $('erro').style.display = 'none';
-  $('resumo').style.display = 'none'; $('listas').innerHTML = ''; $('acoes').style.display = 'none';
+  $('resumo').style.display = 'none'; $('listas').innerHTML = '';
+  $('acoes').style.display = 'none'; $('exportfb').style.display = 'none';
+  ultimo = null;
   $('prog').style.display = 'block'; $('plog').textContent = 'iniciando...';
   try {
     const r = await fetch('/api/jobs', {method:'POST', headers:{'Content-Type':'application/json'},
@@ -98,21 +110,23 @@ async function mostrar(id) {
   const r = await (await fetch(`/api/jobs/${id}`)).json();
   $('go').disabled = false; $('prog').style.display = 'none';
   $('fill').style.width = '100%';
-  const s = r.resumo;
+  if (r.erro) return falha(r.erro);
+  ultimo = {id, ...r};
+  const s = r.resumo || {};
   $('resumo').style.display = 'flex';
   $('resumo').innerHTML = `
-    <div class="pill"><b>${s.com}</b><small>✅ com redes</small></div>
-    <div class="pill"><b>${s.so_site}</b><small>🌐 só site</small></div>
-    <div class="pill"><b>${s.sem}</b><small>❌ sem nada</small></div>`;
+    <div class="pill"><b>${s.com ?? 0}</b><small>✅ com redes</small></div>
+    <div class="pill"><b>${s.so_site ?? 0}</b><small>🌐 só site</small></div>
+    <div class="pill"><b>${s.sem ?? 0}</b><small>❌ sem nada</small></div>`;
   const g = {com:[], so_site:[], sem:[]};
-  r.lugares.forEach(l => g[l.sociais.length ? 'com' : l.website ? 'so_site' : 'sem'].push(l));
+  (r.lugares || []).forEach(l => g[(l.sociais && l.sociais.length) ? 'com' : l.website ? 'so_site' : 'sem'].push(l));
   const ordena = a => a.sort((x,y) => parseFloat((y.nota||'0').replace(',','.')) - parseFloat((x.nota||'0').replace(',','.')));
   const linha = l => {
     const end = (l.categoria_endereco||'').split('·').pop().trim();
     let h = `<div class="item"><b>${l.nome}${l.nota ? ` <span class="nota">⭐${l.nota}</span>` : ''}</b>`;
     if (end) h += `<div class="mut">📍 ${end}${l.tel ? ' · 📞 ' + l.tel : ''}</div>`;
-    l.sociais.forEach(u => h += `<div>${EMO[tipo(u)]} <a href="${u}" target="_blank" rel="noopener">${u.replace(/^https?:\/\/(www\.)?/,'')}</a></div>`);
-    if (!l.sociais.length && l.website)
+    (l.sociais || []).forEach(u => h += `<div>${EMO[tipo(u)] || '🔗'} <a href="${u}" target="_blank" rel="noopener">${u.replace(/^https?:\/\/(www\.)?/,'')}</a></div>`);
+    if (!(l.sociais || []).length && l.website)
       h += `<div>🌐 <a href="${l.website}" target="_blank" rel="noopener">${l.website.replace(/^https?:\/\/(www\.)?/,'').slice(0,60)}</a></div>`;
     return h + '</div>';
   };
@@ -122,9 +136,129 @@ async function mostrar(id) {
     <details><summary>❌ Sem presença digital (${g.sem.length})</summary>${ordena(g.sem).map(linha).join('')}</details>`;
   $('acoes').style.display = 'flex';
   $('acoes').innerHTML = `
-    <a href="/api/jobs/${id}/export?fmt=md" download>⬇ Markdown</a>
-    <a href="/api/jobs/${id}/export?fmt=csv" download>⬇ CSV</a>`;
+    <button type="button" data-fmt="md">⬇ Markdown</button>
+    <button type="button" data-fmt="csv">⬇ CSV</button>`;
 }
+
+const slug = s => (s || 'relatorio').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'relatorio';
+const nomeArquivo = (nicho, cidade, ext) => `prospector-${slug(nicho)}-${slug(cidade)}.${ext}`;
+const titleCase = s => (s || '').replace(/\S+/g, w => w[0].toUpperCase() + w.slice(1));
+const grupos = d => {
+  const g = {com:[], so_site:[], sem:[]};
+  (d.lugares || []).forEach(l => g[(l.sociais && l.sociais.length) ? 'com' : l.website ? 'so_site' : 'sem'].push(l));
+  return g;
+};
+
+function mdLocal(d) {
+  const g = grupos(d);
+  const total = g.com.length + g.so_site.length + g.sem.length;
+  const L = [`# 🔎 ${titleCase(d.nicho)} em ${d.cidade} — presença digital`,
+    `\n**${total} estabelecimentos** (fonte: Google Maps)\n`,
+    '| Categoria | Qtde |', '|---|---|',
+    `| ✅ Com redes sociais | **${g.com.length}** |`,
+    `| 🌐 Só site/cardápio | ${g.so_site.length} |`,
+    `| ❌ Sem nenhum link | ${g.sem.length} |`,
+    `\n## ✅ Com redes sociais (${g.com.length})\n`];
+  for (const l of g.com) {
+    const end = (l.categoria_endereco || '').split('·').pop().trim();
+    L.push(`### ${l.nome}` + (l.nota ? ` — ⭐ ${l.nota}` : ''));
+    if (end) L.push(`- 📍 ${end}`);
+    if (l.tel) L.push(`- 📞 ${l.tel}`);
+    for (const u of (l.sociais || [])) L.push(`- ${EMO[tipo(u)] || '🔗'} ${u}`);
+    L.push('');
+  }
+  L.push(`\n## 🌐 Só site/cardápio (${g.so_site.length})\n\n| Nome | ⭐ | Link |\n|---|---|---|`);
+  for (const l of g.so_site)
+    L.push(`| ${(l.nome || '').slice(0,45)} | ${l.nota || '—'} | ${(l.website || '').slice(0,70)} |`);
+  L.push(`\n## ❌ Sem nenhum link (${g.sem.length})\n\n| Nome | ⭐ | Telefone |\n|---|---|---|`);
+  for (const l of g.sem)
+    L.push(`| ${(l.nome || '').slice(0,50)} | ${l.nota || '—'} | ${l.tel || '—'} |`);
+  return L.join('\n');
+}
+
+function csvLocal(d) {
+  const esc = v => {
+    const s = String(v ?? '');
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const g = grupos(d);
+  const rows = [['categoria','nome','nota','endereco','telefone','website','redes_sociais']];
+  for (const [lista, nomeG] of [[g.com,'com_redes'],[g.so_site,'so_site'],[g.sem,'sem_nada']]) {
+    for (const l of lista) {
+      const end = (l.categoria_endereco || '').split('·').pop().trim();
+      rows.push([nomeG, l.nome || '', l.nota || '', end, l.tel || '', l.website || '', (l.sociais || []).join(' | ')]);
+    }
+  }
+  return '\uFEFF' + rows.map(r => r.map(esc).join(',')).join('\n');
+}
+
+function dispararDownload(nome, texto, mime) {
+  const blob = new Blob([texto], {type: mime + ';charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nome;
+  a.rel = 'noopener';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+function mostrarFallback(nome, texto, apiUrl) {
+  const fb = $('exportfb');
+  fb.style.display = 'block';
+  fb.innerHTML = `
+    <div class="row">
+      <span>Gerado</span> <b>${nome}</b>
+      <button type="button" id="exportcopy">Copiar</button>
+      <button type="button" id="exportver">Ver</button>
+      <a href="${apiUrl}" target="_blank" rel="noopener" download="${nome}">Abrir</a>
+    </div>
+    <textarea id="exporttxt" readonly></textarea>`;
+  $('exporttxt').value = texto;
+  $('exportcopy').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(texto);
+      $('exportcopy').textContent = 'Copiado';
+    } catch {
+      const t = $('exporttxt');
+      t.style.display = 'block';
+      t.select();
+      document.execCommand('copy');
+      $('exportcopy').textContent = 'Copiado';
+    }
+  };
+  $('exportver').onclick = () => {
+    const t = $('exporttxt');
+    const on = t.style.display === 'block';
+    t.style.display = on ? 'none' : 'block';
+    $('exportver').textContent = on ? 'Ver' : 'Ocultar';
+  };
+}
+
+$('acoes').addEventListener('click', async ev => {
+  const btn = ev.target.closest('button[data-fmt]');
+  if (!btn || !ultimo) return;
+  const fmt = btn.dataset.fmt;
+  const ext = fmt === 'csv' ? 'csv' : 'md';
+  const mime = fmt === 'csv' ? 'text/csv' : 'text/markdown';
+  const nome = nomeArquivo(ultimo.nicho, ultimo.cidade, ext);
+  const apiUrl = `/api/jobs/${ultimo.id}/export?fmt=${ext}`;
+  btn.disabled = true;
+  let texto = '';
+  try {
+    const r = await fetch(apiUrl);
+    if (r.ok) texto = await r.text();
+  } catch (_) { /* gera local */ }
+  if (!texto) texto = fmt === 'csv' ? csvLocal(ultimo) : mdLocal(ultimo);
+  try { dispararDownload(nome, texto, mime); }
+  catch (_) { /* iframe sem allow-downloads */ }
+  mostrarFallback(nome, texto, apiUrl);
+  btn.disabled = false;
+});
 </script>
 </body>
 </html>
