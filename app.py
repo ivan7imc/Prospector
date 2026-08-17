@@ -1,5 +1,6 @@
 """Prospector — Starlette puro (sem pydantic: -35 MB de RAM vs FastAPI)."""
 import asyncio, json, os, time, uuid
+from pathlib import Path
 
 from starlette.applications import Starlette
 from starlette.responses import (HTMLResponse, JSONResponse,
@@ -17,8 +18,12 @@ _rodando = asyncio.Lock()                 # 1 job por vez (anti-bloqueio)
 LIMITE_MAX = int(os.getenv("LIMITE_MAX", "40" if os.getenv("LOW_MEM") == "1" else "120"))
 
 
+# caminho absoluto: não depende do diretório de onde o uvicorn foi iniciado
+INDEX = Path(__file__).parent / "static" / "index.html"
+
+
 async def index(request):
-    return HTMLResponse(open("static/index.html", encoding="utf-8").read())
+    return HTMLResponse(INDEX.read_text(encoding="utf-8"))
 
 
 async def criar_job(request):
