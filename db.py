@@ -2,20 +2,45 @@
 
 Neon-friendly: conexão curta por operação (serverless, sem pool ocioso
 segurando o compute do Neon acordado) e autocommit.
+
+Cold start: no free tier o compute do Neon suspende após ~5 min ocioso e o
+primeiro acesso precisa acordá-lo. Isso costuma levar poucos segundos, mas
+pode passar de 10s — daí o timeout generoso e um retry, já que durante o
+wake o endpoint pode recusar/derrubar a conexão antes de aceitar.
 """
 import os
+import time
 from contextlib import closing
 
 URL = os.getenv("DATABASE_URL", "")
 
+# margem para o wake do compute suspenso (Render/Neon free tier)
+PG_TIMEOUT = int(os.getenv("PG_CONNECT_TIMEOUT", "30"))
+PG_TENTATIVAS = int(os.getenv("PG_TENTATIVAS", "3"))
+
 if URL:
     import psycopg
 
-    def _conn():
+    def _dsn():
+        dsn = URL
         # Neon exige TLS; se a URL não tiver sslmode, forçamos require
-        dsn = URL if "sslmode=" in URL else \
-            URL + ("&" if "?" in URL else "?") + "sslmode=require"
-        return psycopg.connect(dsn, autocommit=True, connect_timeout=10)
+        if "sslmode=" not in dsn:
+            dsn += ("&" if "?" in dsn else "?") + "sslmode=require"
+        # respeita connect_timeout explícito na URL; senão aplica o nosso
+        if "connect_timeout=" not in dsn:
+            dsn += ("&" if "?" in dsn else "?") + f"connect_timeout={PG_TIMEOUT}"
+        return dsn
+
+    def _conn():
+        """Conecta com retry: o 1º acesso após o compute dormir pode falhar."""
+        for tentativa in range(1, PG_TENTATIVAS + 1):
+            try:
+                return psycopg.connect(_dsn(), autocommit=True)
+            except psycopg.OperationalError:
+                if tentativa == PG_TENTATIVAS:
+                    raise
+                # backoff curto: o compute do Neon costuma subir em segundos
+                time.sleep(tentativa)
 else:
     import sqlite3
 
