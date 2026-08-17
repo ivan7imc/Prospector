@@ -1,5 +1,8 @@
 # Prospector — otimizado para Render free tier (512 MB RAM)
-FROM python:3.12-slim
+# bookworm (Debian 12) de propósito: `python:3.12-slim` hoje aponta para o
+# Debian 13 (trixie), que o playwright==1.49.* ainda não suporta — o
+# `playwright install --with-deps` falharia tentando instalar pacotes Ubuntu.
+FROM python:3.12-slim-bookworm
 
 ENV PYTHONUNBUFFERED=1 \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
