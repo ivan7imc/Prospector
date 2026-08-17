@@ -67,7 +67,7 @@ O Neon guarda jobs, cache (7 dias) e histórico, sobrevivendo a deploys e spin-d
 | `/api/jobs` | POST `{nicho, cidade, limite?}` | Cria job (retorna cache se busca <7 dias) |
 | `/api/jobs/{id}/events` | GET | SSE de progresso |
 | `/api/jobs/{id}` | GET | Resultado JSON |
-| `/api/jobs/{id}/export?fmt=md\|csv` | GET | Download do relatório |
+| `/api/jobs/{id}/export?fmt=md\|csv` | GET | Download do relatório (`prospector-{nicho}-{cidade}.{md,csv}`, CSV UTF-8 com BOM) |
 | `/api/historico` | GET | Últimos 20 jobs |
 
 ## Estrutura

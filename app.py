@@ -3,14 +3,13 @@ import asyncio, json, os, time, uuid
 from pathlib import Path
 
 from starlette.applications import Starlette
-from starlette.responses import (HTMLResponse, JSONResponse,
-                                 PlainTextResponse, StreamingResponse)
+from starlette.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
 import db
 from scraper import Scraper
 from social import cacar_sociais
-from report import categorizar, para_markdown, para_csv
+from report import categorizar, nome_arquivo, para_markdown, para_csv
 
 db.init()
 _eventos: dict[str, asyncio.Queue] = {}   # job_id -> fila SSE
@@ -137,19 +136,34 @@ async def resultado(request):
     return erro or JSONResponse(dados)
 
 
+def _anexo(conteudo: str, nome: str, media: str) -> Response:
+    """Força download: attachment + nosniff. Corpo em UTF-8 (CSV já vem com BOM)."""
+    return Response(
+        content=conteudo.encode("utf-8"),
+        media_type=media,
+        headers={
+            "Content-Disposition": f'attachment; filename="{nome}"',
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "no-store",
+        },
+    )
+
+
 async def exportar(request):
     jid = request.path_params["jid"]
     dados, erro = _carregar(jid)
     if erro:
         return erro
-    cat = categorizar(dados["lugares"])
-    fmt = request.query_params.get("fmt", "md")
-    if fmt == "csv":
-        return PlainTextResponse(para_csv(cat), media_type="text/csv",
-            headers={"Content-Disposition": f"attachment; filename=prospector-{jid}.csv"})
-    return PlainTextResponse(para_markdown(dados["nicho"], dados["cidade"], cat),
-        media_type="text/markdown",
-        headers={"Content-Disposition": f"attachment; filename=prospector-{jid}.md"})
+    try:
+        cat = categorizar(dados.get("lugares") or [])
+        fmt = (request.query_params.get("fmt") or "md").lower()
+        nicho, cidade = dados.get("nicho", ""), dados.get("cidade", "")
+        if fmt == "csv":
+            return _anexo(para_csv(cat), nome_arquivo(nicho, cidade, "csv"), "text/csv")
+        return _anexo(para_markdown(nicho, cidade, cat),
+                      nome_arquivo(nicho, cidade, "md"), "text/markdown")
+    except Exception as e:
+        return JSONResponse({"erro": f"falha ao exportar: {e}"}, status_code=500)
 
 
 async def historico(request):
