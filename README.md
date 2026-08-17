@@ -38,6 +38,13 @@ MALLOC_ARENA_MAX=2 LOW_MEM=1 PARALELO=1 LIMITE_MAX=40 \
 
 O Neon guarda jobs, cache (7 dias) e histórico, sobrevivendo a deploys e spin-downs do free tier.
 
+> **Cold start:** no free tier o compute do Neon suspende após alguns minutos ocioso.
+> O primeiro acesso precisa acordá-lo, então `db.py` usa `connect_timeout=30` e
+> tenta reconectar 3x (backoff 1s/2s). Ajuste com `PG_CONNECT_TIMEOUT`/`PG_TENTATIVAS`.
+>
+> Cole a connection string com `&` puro — se vier escapada como `&amp;` (copiar/colar
+> de HTML), o psycopg falha com `invalid URI query parameter: "amp;..."`.
+
 ---
 
 ## Variáveis de ambiente
@@ -45,6 +52,8 @@ O Neon guarda jobs, cache (7 dias) e histórico, sobrevivendo a deploys e spin-d
 | Variável | Default | Função |
 |---|---|---|
 | `DATABASE_URL` | — | Postgres/Neon; ausente → SQLite local |
+| `PG_CONNECT_TIMEOUT` | `30` | Segundos p/ conectar; margem para o cold start do Neon (ignorado se a URL já tiver `connect_timeout`) |
+| `PG_TENTATIVAS` | `3` | Tentativas de conexão (backoff 1s, 2s) enquanto o compute do Neon acorda |
 | `LOW_MEM` | `0` | `1` = modo 512 MB (bloqueia imagens/CSS/tiles, sequencial, browser por etapa) |
 | `PARALELO` | `5` (`1` se LOW_MEM) | Abas simultâneas |
 | `LIMITE_MAX` | `120` (`40` se LOW_MEM) | Teto de lugares por job |

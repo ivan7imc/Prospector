@@ -14,9 +14,14 @@ services:
       - key: MALLOC_ARENA_MAX
         value: "2"
       # Neon (Postgres serverless) — crie o projeto em neon.tech e cole a
-      # connection string no dashboard do Render (sync: false pede input manual)
+      # connection string no dashboard do Render (sync: false pede input manual).
+      # Use o endpoint -pooler e cole com "&" puro (não "&amp;").
       - key: DATABASE_URL
         sync: false
+      # Cold start do Neon free tier: o compute suspende ocioso e o 1º acesso
+      # precisa acordá-lo (segundos). Timeout curto derrubaria essa requisição.
+      - key: PG_CONNECT_TIMEOUT
+        value: "30"
       # Se o Chromium ficar instável em single-process, desligue com:
       # - key: SINGLE_PROC
       #   value: "0"
