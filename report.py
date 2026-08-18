@@ -52,6 +52,34 @@ def categorizar(lugares):
     return {"com": com, "so_site": so_site, "sem": sem, "stats": stats}
 
 
+def normalizar_lugares(lugares):
+    """Lista plana/normalizada dos lugares extraídos — p/ exposição via API."""
+    out = []
+    for l in lugares or []:
+        soc = _sociais(l)
+        if soc:
+            presenca = "com_redes"
+        elif l.get("website"):
+            presenca = "so_site"
+        else:
+            presenca = "sem_nada"
+        partes = (l.get("categoria_endereco") or "").split("·")
+        out.append({
+            "nome": l.get("nome") or "",
+            "nota": l.get("nota") or "",
+            "categoria": partes[0].strip() if len(partes) > 1 else "",
+            "endereco": partes[-1].strip(),
+            "horario": l.get("horario") or "",
+            "telefone": l.get("tel") or "",
+            "website": l.get("website") or "",
+            "gmaps_url": l.get("gmaps_url") or "",
+            "presenca": presenca,
+            "redes": [tipo_link(u) for u in soc],
+            "sociais": soc,
+        })
+    return out
+
+
 def para_markdown(nicho, cidade, cat):
     com, so_site, sem = cat["com"], cat["so_site"], cat["sem"]
     total = len(com) + len(so_site) + len(sem)

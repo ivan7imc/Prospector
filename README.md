@@ -62,13 +62,123 @@ O Neon guarda jobs, cache (7 dias) e histórico, sobrevivendo a deploys e spin-d
 
 ## API
 
-| Rota | Método | Função |
+A API expõe os dados extraídos em JSON e permite baixar o relatório em Markdown/CSV.
+Todas as rotas ficam sob `/api`. Base local: `http://localhost:8000`.
+
+### `POST /api/jobs`
+
+Cria um job de raspagem. Se a mesma busca (nicho + cidade) foi concluída nos
+últimos 7 dias, retorna o job em cache sem raspar de novo.
+
+**Corpo** (JSON):
+
+```json
+{ "nicho": "cafeterias", "cidade": "curitiba", "limite": 40 }
+```
+
+| Campo | Tipo | Obrigatório | Função |
+|---|---|---|---|
+| `nicho` | string | ✅ | Nicho/termo de busca |
+| `cidade` | string | ✅ | Cidade (geocodada via Nominatim) |
+| `limite` | int | — | Teto de lugares (5–`LIMITE_MAX`); default 40 |
+
+**Resposta** — `200 OK`:
+
+```json
+{ "id": "3f2a9c8b7d1e", "cache": false }
+```
+
+`cache: true` indica que veio de uma busca recente.
+
+### `GET /api/jobs/{id}/events`
+
+Stream de progresso via **Server-Sent Events (SSE)** — use `EventSource` no navegador
+ou `text/event-stream` no cliente. Cada evento tem `etapa`, `atual`, `total` e `msg`:
+
+```
+data: {"etapa": "busca", "atual": 12, "total": 40, "msg": "rolagem 3: 12 lugares"}
+
+data: {"etapa": "fim", "atual": 1, "total": 1, "msg": "concluído"}
+```
+
+A stream termina em `etapa: "fim"` (sucesso) ou `etapa: "erro"`.
+
+### `GET /api/jobs/{id}`
+
+Resultado completo do job em JSON — inclui a lista bruta de `lugares` (nome, nota,
+categoria/endereço, horário, telefone, website, `gmaps_url` e `sociais`) e um `resumo`
+com a contagem por categoria e o ranking de redes.
+
+```json
+{
+  "nicho": "cafeterias",
+  "cidade": "curitiba",
+  "resumo": { "com": 12, "so_site": 8, "sem": 5, "stats": { "instagram": 11 } },
+  "lugares": [ { "nome": "...", "nota": "4,6", "sociais": ["https://instagram.com/..."] } ]
+}
+```
+
+### `GET /api/jobs/{id}/lugares`
+
+Lista **plana e normalizada** dos lugares extraídos — o endpoint indicado para
+consumir os dados. Cada lugar já vem com a categoria/endereço separados e o campo
+`presenca` (classificação da presença digital).
+
+| Campo | Descrição |
+|---|---|
+| `nome`, `nota`, `horario`, `telefone` | Dados da ficha no Maps |
+| `categoria`, `endereco` | Separados a partir de `categoria_endereco` |
+| `website`, `gmaps_url` | Links |
+| `presenca` | `com_redes` \| `so_site` \| `sem_nada` |
+| `redes` | Tipos de rede (ex.: `["instagram", "whatsapp"]`) |
+| `sociais` | URLs completas das redes |
+
+**Filtros** (query string, combináveis):
+
+| Parâmetro | Função | Exemplo |
 |---|---|---|
-| `/api/jobs` | POST `{nicho, cidade, limite?}` | Cria job (retorna cache se busca <7 dias) |
-| `/api/jobs/{id}/events` | GET | SSE de progresso |
-| `/api/jobs/{id}` | GET | Resultado JSON |
-| `/api/jobs/{id}/export?fmt=md\|csv` | GET | Download do relatório (`prospector-{nicho}-{cidade}.{md,csv}`, CSV UTF-8 com BOM) |
-| `/api/historico` | GET | Últimos 20 jobs |
+| `q` | Substring no nome (case-insensitive) | `?q=café` |
+| `categoria` | Filtra por presença digital | `?categoria=com_redes` |
+| `rede` | Filtra por rede social | `?rede=instagram` |
+| `limite` / `offset` | Paginação (teto de 500) | `?limite=20&offset=20` |
+
+**Resposta** — `200 OK`:
+
+```json
+{
+  "total": 25, "offset": 0, "limite": 20,
+  "lugares": [
+    {
+      "nome": "Café Alameda", "nota": "4,6", "categoria": "Cafeteria",
+      "endereco": "Rua XV de Novembro, 300", "telefone": "+55 41 ...",
+      "website": "https://...", "gmaps_url": "https://maps/...",
+      "presenca": "com_redes", "redes": ["instagram"], "sociais": ["https://instagram.com/..."]
+    }
+  ]
+}
+```
+
+### `GET /api/jobs/{id}/export?fmt=md|csv`
+
+Download do relatório como anexo (`Content-Disposition: attachment`).
+Arquivo `prospector-{nicho}-{cidade}.{md,csv}` — CSV em UTF-8 com BOM (abre direto no Excel).
+
+### `GET /api/historico`
+
+Últimos 20 jobs (qualquer status), mais recentes primeiro.
+
+```json
+[ { "id": "3f2a9c8b7d1e", "nicho": "cafeterias", "cidade": "curitiba", "status": "ok", "criado": 1723824000 } ]
+```
+
+### Erros
+
+| Status | Quando |
+|---|---|
+| `404` | Job não encontrado |
+| `409` | Job ainda rodando |
+| `422` | POST sem `nicho`/`cidade` (ou `limite` inválido) |
+| `500` | Job falhou (detalhe no corpo `{ "erro": "..." }`) |
 
 ## Estrutura
 

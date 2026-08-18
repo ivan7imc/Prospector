@@ -9,7 +9,7 @@ from starlette.routing import Route
 import db
 from scraper import Scraper
 from social import cacar_sociais
-from report import categorizar, nome_arquivo, para_markdown, para_csv
+from report import categorizar, normalizar_lugares, nome_arquivo, para_markdown, para_csv
 
 db.init()
 _eventos: dict[str, asyncio.Queue] = {}   # job_id -> fila SSE
@@ -166,6 +166,44 @@ async def exportar(request):
         return JSONResponse({"erro": f"falha ao exportar: {e}"}, status_code=500)
 
 
+async def lugares(request):
+    """Exposição dos dados extraídos: lista plana e normalizada dos lugares.
+
+    Filtros via query string:
+      - q=          substring no nome (case-insensitive)
+      - categoria=  com_redes | so_site | sem_nada
+      - rede=       instagram | facebook | tiktok | linktree | whatsapp
+      - limite/offset  paginação (limite default = todos, teto 500)
+    """
+    jid = request.path_params["jid"]
+    dados, erro = _carregar(jid)
+    if erro:
+        return erro
+
+    lista = normalizar_lugares(dados.get("lugares") or [])
+
+    q = (request.query_params.get("q") or "").strip().lower()
+    categoria = (request.query_params.get("categoria") or "").strip().lower()
+    rede = (request.query_params.get("rede") or "").strip().lower()
+    if q:
+        lista = [l for l in lista if q in l["nome"].lower()]
+    if categoria:
+        lista = [l for l in lista if l["presenca"] == categoria]
+    if rede:
+        lista = [l for l in lista if rede in l["redes"]]
+
+    try:
+        offset = max(0, int(request.query_params.get("offset", 0)))
+        limite = int(request.query_params.get("limite", len(lista)))
+        limite = max(1, min(limite, 500))
+    except ValueError:
+        offset, limite = 0, len(lista)
+
+    total = len(lista)
+    return JSONResponse({"total": total, "offset": offset,
+                         "limite": limite, "lugares": lista[offset:offset + limite]})
+
+
 async def historico(request):
     rows = db.q("SELECT id, nicho, cidade, status, criado FROM jobs "
                 "ORDER BY criado DESC LIMIT 20", fetch=True)
@@ -178,6 +216,7 @@ app = Starlette(routes=[
     Route("/api/jobs", criar_job, methods=["POST"]),
     Route("/api/jobs/{jid}/events", eventos),
     Route("/api/jobs/{jid}/export", exportar),
+    Route("/api/jobs/{jid}/lugares", lugares),
     Route("/api/jobs/{jid}", resultado),
     Route("/api/historico", historico),
 ])
