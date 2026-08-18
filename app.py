@@ -94,6 +94,13 @@ async def _executar(jid, nicho, cidade, limite):
     except Exception as e:
         db.q("UPDATE jobs SET status='erro', resultado=? WHERE id=?", (str(e), jid))
         await fila.put({"etapa": "erro", "atual": 0, "total": 1, "msg": str(e)[:200]})
+    finally:
+        # Remove a fila do dicionário assim que o job termina. Sem isso, se o
+        # cliente nunca abrir /events (ou desconectar no meio), a entrada e os
+        # eventos acumulados vazam para sempre. O consumidor que já está
+        # conectado mantém sua própria referência `fila`, então continua
+        # recebendo os eventos finais normalmente.
+        _eventos.pop(jid, None)
 
 
 async def eventos(request):
