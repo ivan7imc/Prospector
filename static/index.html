@@ -182,12 +182,37 @@ function csvLocal(d) {
     const s = String(v ?? '');
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
+  const instaUser = u => {
+    try {
+      const p = new URL(u).pathname.replace(/^\/+|\/+$/g, '');
+      return (p.split('/')[0] || '').replace(/^@/, '');
+    } catch { return ''; }
+  };
+  const partes = l => {
+    const ps = (l.categoria_endereco || '').split('·').map(x => x.trim()).filter(Boolean);
+    return {categoria: ps.length > 1 ? ps[0] : '', endereco: ps.length ? ps[ps.length - 1] : ''};
+  };
   const g = grupos(d);
-  const rows = [['categoria','nome','nota','endereco','telefone','website','redes_sociais']];
-  for (const [lista, nomeG] of [[g.com,'com_redes'],[g.so_site,'so_site'],[g.sem,'sem_nada']]) {
+  const rows = [[
+    'nome','nicho','cidade','categoria','endereco','telefone','website','instagram','instagram_username',
+    'instagram_urls','whatsapp','nota_google','avaliacoes_google','gmaps_url','horario','presenca',
+    'redes','redes_sociais','outras_redes','fonte'
+  ]];
+  for (const [lista, presenca] of [[g.com,'com_redes'],[g.so_site,'so_site'],[g.sem,'sem_nada']]) {
     for (const l of lista) {
-      const end = (l.categoria_endereco || '').split('·').pop().trim();
-      rows.push([nomeG, l.nome || '', l.nota || '', end, l.tel || '', l.website || '', (l.sociais || []).join(' | ')]);
+      const soc = l.sociais || [];
+      const instagramUrls = soc.filter(u => tipo(u) === 'instagram');
+      const instagram = instagramUrls[0] || '';
+      const whatsapp = soc.find(u => tipo(u) === 'whatsapp') || '';
+      const outras = soc.filter(u => tipo(u) !== 'instagram');
+      const redes = [...new Set(soc.map(tipo).filter(Boolean))];
+      const p = partes(l);
+      rows.push([
+        l.nome || '', d.nicho || '', d.cidade || '', p.categoria, p.endereco, l.tel || '', l.website || '',
+        instagram, instaUser(instagram), instagramUrls.join(' | '), whatsapp, l.nota || '',
+        l.avaliacoes || l.avaliacoes_google || '', l.gmaps_url || '', l.horario || '', presenca,
+        redes.join(' | '), soc.join(' | '), outras.join(' | '), 'google_maps_via_prospector'
+      ]);
     }
   }
   return '\uFEFF' + rows.map(r => r.map(esc).join(',')).join('\n');

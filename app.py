@@ -166,7 +166,7 @@ async def exportar(request):
         fmt = (request.query_params.get("fmt") or "md").lower()
         nicho, cidade = dados.get("nicho", ""), dados.get("cidade", "")
         if fmt == "csv":
-            return _anexo(para_csv(cat), nome_arquivo(nicho, cidade, "csv"), "text/csv")
+            return _anexo(para_csv(cat, nicho, cidade), nome_arquivo(nicho, cidade, "csv"), "text/csv")
         return _anexo(para_markdown(nicho, cidade, cat),
                       nome_arquivo(nicho, cidade, "md"), "text/markdown")
     except Exception as e:
@@ -187,7 +187,7 @@ async def lugares(request):
     if erro:
         return erro
 
-    lista = normalizar_lugares(dados.get("lugares") or [])
+    lista = normalizar_lugares(dados.get("lugares") or [], dados.get("nicho", ""), dados.get("cidade", ""))
 
     q = (request.query_params.get("q") or "").strip().lower()
     categoria = (request.query_params.get("categoria") or "").strip().lower()

@@ -126,12 +126,13 @@ consumir os dados. Cada lugar já vem com a categoria/endereço separados e o ca
 
 | Campo | Descrição |
 |---|---|
-| `nome`, `nota`, `horario`, `telefone` | Dados da ficha no Maps |
+| `nome`, `nicho`, `cidade`, `nota`, `nota_google`, `avaliacoes_google`, `horario`, `telefone` | Dados/contexto da ficha no Maps |
 | `categoria`, `endereco` | Separados a partir de `categoria_endereco` |
 | `website`, `gmaps_url` | Links |
 | `presenca` | `com_redes` \| `so_site` \| `sem_nada` |
+| `instagram`, `instagram_username`, `instagram_urls`, `whatsapp` | Instagram principal, URLs normalizadas e WhatsApp para o Opportunity |
 | `redes` | Tipos de rede (ex.: `["instagram", "whatsapp"]`) |
-| `sociais` | URLs completas das redes |
+| `sociais`, `outras_redes` | URLs completas das redes |
 
 **Filtros** (query string, combináveis):
 
@@ -149,10 +150,14 @@ consumir os dados. Cada lugar já vem com a categoria/endereço separados e o ca
   "total": 25, "offset": 0, "limite": 20,
   "lugares": [
     {
-      "nome": "Café Alameda", "nota": "4,6", "categoria": "Cafeteria",
-      "endereco": "Rua XV de Novembro, 300", "telefone": "+55 41 ...",
-      "website": "https://...", "gmaps_url": "https://maps/...",
-      "presenca": "com_redes", "redes": ["instagram"], "sociais": ["https://instagram.com/..."]
+      "nome": "Café Alameda", "nicho": "cafeterias", "cidade": "curitiba",
+      "nota": "4,6", "nota_google": "4,6", "avaliacoes_google": "120",
+      "categoria": "Cafeteria", "endereco": "Rua XV de Novembro, 300",
+      "telefone": "+55 41 ...", "website": "https://...", "gmaps_url": "https://maps/...",
+      "presenca": "com_redes", "instagram": "https://instagram.com/cafealameda",
+      "instagram_username": "cafealameda", "whatsapp": "https://wa.me/554199999999",
+      "redes": ["instagram", "whatsapp"],
+      "sociais": ["https://instagram.com/cafealameda", "https://wa.me/554199999999"]
     }
   ]
 }
@@ -162,6 +167,18 @@ consumir os dados. Cada lugar já vem com a categoria/endereço separados e o ca
 
 Download do relatório como anexo (`Content-Disposition: attachment`).
 Arquivo `prospector-{nicho}-{cidade}.{md,csv}` — CSV em UTF-8 com BOM (abre direto no Excel).
+
+O CSV foi preparado para importação direta no **Opportunity**. Ele inclui, em colunas planas:
+
+| Campo | Função |
+|---|---|
+| `nome`, `nicho`, `cidade`, `categoria`, `endereco` | Contexto comercial do estabelecimento |
+| `telefone`, `website`, `whatsapp`, `gmaps_url`, `horario` | Canais e sinais de acionabilidade |
+| `instagram`, `instagram_username`, `instagram_urls` | Perfil principal já normalizado para consulta na Meta Business Discovery API |
+| `nota_google`, `avaliacoes_google` | Sinais de reputação offline para scoring |
+| `presenca` | `com_redes` \| `so_site` \| `sem_nada` |
+| `redes`, `redes_sociais`, `outras_redes` | Redes detectadas e URLs completas |
+| `fonte` | `google_maps_via_prospector` |
 
 ### `GET /api/historico`
 
