@@ -47,6 +47,17 @@ summary { padding:12px 14px; cursor:pointer; font-weight:600 }
 #exportfb textarea { display:none; width:100%; min-height:160px; margin-top:8px; font:12px/1.4 ui-monospace,monospace;
   background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:8px }
 #erro { display:none; color:#c0392b; margin-bottom:16px }
+#hist { margin-top:28px; border-top:1px solid var(--line); padding-top:16px; font-size:.9rem }
+#hist h2 { font-size:1rem; margin-bottom:8px }
+#hist .empty { color:var(--mut) }
+#hist .job { display:flex; gap:8px; align-items:center; justify-content:space-between;
+  border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin-bottom:6px }
+#hist .meta { min-width:0 }
+#hist .meta b { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+#hist .meta small { color:var(--mut) }
+#hist .acts { display:flex; gap:6px; flex-shrink:0 }
+#hist .acts button, #hist .acts a { padding:4px 8px; border:1px solid var(--line); border-radius:7px;
+  color:var(--fg); background:transparent; text-decoration:none; font:inherit; cursor:pointer }
 </style>
 </head>
 <body>
@@ -65,6 +76,7 @@ summary { padding:12px 14px; cursor:pointer; font-weight:600 }
 <div id="listas"></div>
 <div id="acoes"></div>
 <div id="exportfb"></div>
+<div id="hist"><h2>Últimas buscas</h2><div class="empty">carregando...</div></div>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -72,6 +84,43 @@ const EMO = {instagram:'📸', facebook:'👥', tiktok:'🎵', linktree:'🔗', 
 const tipo = u => /instagram/i.test(u) ? 'instagram' : /facebook|fb\.com/i.test(u) ? 'facebook'
   : /tiktok/i.test(u) ? 'tiktok' : /linktr\.ee/i.test(u) ? 'linktree' : /wa\.me|whatsapp/i.test(u) ? 'whatsapp' : null;
 let ultimo = null;
+
+const escHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtData = ts => ts ? new Date(ts * 1000).toLocaleString('pt-BR', {dateStyle:'short', timeStyle:'short'}) : '';
+const statusTxt = s => s === 'ok' ? 'pronto' : s === 'rodando' ? 'rodando' : s === 'erro' ? 'erro' : s;
+
+async function carregarHistorico() {
+  const box = $('hist');
+  try {
+    const r = await fetch('/api/historico?limite=7');
+    const jobs = await r.json();
+    if (!Array.isArray(jobs) || !jobs.length) {
+      box.innerHTML = '<h2>Últimas buscas</h2><div class="empty">nenhuma busca ainda</div>';
+      return;
+    }
+    box.innerHTML = '<h2>Últimas buscas</h2>' + jobs.map(j => {
+      const nome = `${j.nicho || '—'} em ${j.cidade || '—'}`;
+      const ok = j.status === 'ok';
+      return `<div class="job">
+        <div class="meta"><b>${escHtml(nome)}</b><small>${statusTxt(j.status)} · ${fmtData(j.criado)}</small></div>
+        <div class="acts">
+          <button type="button" data-job="${j.id}" ${ok ? '' : 'disabled'}>Ver</button>
+          ${ok ? `<a href="/api/jobs/${j.id}/export?fmt=csv" download>CSV</a>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+  } catch (_) {
+    box.innerHTML = '<h2>Últimas buscas</h2><div class="empty">histórico indisponível</div>';
+  }
+}
+
+$('hist').addEventListener('click', ev => {
+  const btn = ev.target.closest('button[data-job]');
+  if (!btn) return;
+  mostrar(btn.dataset.job);
+});
+
+carregarHistorico();
 
 $('f').onsubmit = async e => {
   e.preventDefault();
@@ -112,6 +161,7 @@ async function mostrar(id) {
   $('fill').style.width = '100%';
   if (r.erro) return falha(r.erro);
   ultimo = {id, ...r};
+  carregarHistorico();
   const s = r.resumo || {};
   $('resumo').style.display = 'flex';
   $('resumo').innerHTML = `
@@ -182,12 +232,37 @@ function csvLocal(d) {
     const s = String(v ?? '');
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
+  const instaUser = u => {
+    try {
+      const p = new URL(u).pathname.replace(/^\/+|\/+$/g, '');
+      return (p.split('/')[0] || '').replace(/^@/, '');
+    } catch { return ''; }
+  };
+  const partes = l => {
+    const ps = (l.categoria_endereco || '').split('·').map(x => x.trim()).filter(Boolean);
+    return {categoria: ps.length > 1 ? ps[0] : '', endereco: ps.length ? ps[ps.length - 1] : ''};
+  };
   const g = grupos(d);
-  const rows = [['categoria','nome','nota','endereco','telefone','website','redes_sociais']];
-  for (const [lista, nomeG] of [[g.com,'com_redes'],[g.so_site,'so_site'],[g.sem,'sem_nada']]) {
+  const rows = [[
+    'nome','nicho','cidade','categoria','endereco','telefone','website','instagram','instagram_username',
+    'instagram_urls','whatsapp','nota_google','avaliacoes_google','gmaps_url','horario','presenca',
+    'redes','redes_sociais','outras_redes','fonte'
+  ]];
+  for (const [lista, presenca] of [[g.com,'com_redes'],[g.so_site,'so_site'],[g.sem,'sem_nada']]) {
     for (const l of lista) {
-      const end = (l.categoria_endereco || '').split('·').pop().trim();
-      rows.push([nomeG, l.nome || '', l.nota || '', end, l.tel || '', l.website || '', (l.sociais || []).join(' | ')]);
+      const soc = l.sociais || [];
+      const instagramUrls = soc.filter(u => tipo(u) === 'instagram');
+      const instagram = instagramUrls[0] || '';
+      const whatsapp = soc.find(u => tipo(u) === 'whatsapp') || '';
+      const outras = soc.filter(u => tipo(u) !== 'instagram');
+      const redes = [...new Set(soc.map(tipo).filter(Boolean))];
+      const p = partes(l);
+      rows.push([
+        l.nome || '', d.nicho || '', d.cidade || '', p.categoria, p.endereco, l.tel || '', l.website || '',
+        instagram, instaUser(instagram), instagramUrls.join(' | '), whatsapp, l.nota || '',
+        l.avaliacoes || l.avaliacoes_google || '', l.gmaps_url || '', l.horario || '', presenca,
+        redes.join(' | '), soc.join(' | '), outras.join(' | '), 'google_maps_via_prospector'
+      ]);
     }
   }
   return '\uFEFF' + rows.map(r => r.map(esc).join(',')).join('\n');

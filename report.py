@@ -1,5 +1,6 @@
 """Etapa 4: categorização + exportação MD/CSV."""
 import csv, io, re, unicodedata
+from urllib.parse import urlparse
 from social import tipo_link
 
 EMO = {"instagram": "📸", "facebook": "👥", "tiktok": "🎵", "linktree": "🔗", "whatsapp": "💬"}
@@ -20,11 +21,46 @@ def _end(lug):
     return (lug.get("categoria_endereco") or "").split("·")[-1].strip()
 
 
+def _partes_categoria_endereco(lug):
+    partes = [p.strip() for p in (lug.get("categoria_endereco") or "").split("·") if p.strip()]
+    return {
+        "categoria": partes[0] if len(partes) > 1 else "",
+        "endereco": partes[-1] if partes else "",
+    }
+
+
 def _slug(s):
     s = unicodedata.normalize("NFD", str(s or ""))
     s = "".join(c for c in s if unicodedata.category(c) != "Mn")
     s = re.sub(r"[^a-zA-Z0-9]+", "-", s).strip("-").lower()
     return s or "relatorio"
+
+
+def _instagram_urls(lug):
+    return [u for u in _sociais(lug) if tipo_link(u) == "instagram"]
+
+
+def _instagram_username(url):
+    """Extrai o @username de uma URL do Instagram já filtrada em social.py."""
+    if not url:
+        return ""
+    path = urlparse(url).path.strip("/")
+    if not path:
+        return ""
+    username = path.split("/")[0].strip().lstrip("@")
+    # Defesa extra para endpoints que não representam perfis.
+    if username.lower() in {"accounts", "explore", "about", "legal", "p", "reel", "reels", "direct", "api"}:
+        return ""
+    return username
+
+
+def _redes(lug):
+    tipos = []
+    for u in _sociais(lug):
+        t = tipo_link(u)
+        if t and t not in tipos:
+            tipos.append(t)
+    return tipos
 
 
 def nome_arquivo(nicho, cidade, ext):
@@ -52,29 +88,42 @@ def categorizar(lugares):
     return {"com": com, "so_site": so_site, "sem": sem, "stats": stats}
 
 
-def normalizar_lugares(lugares):
-    """Lista plana/normalizada dos lugares extraídos — p/ exposição via API."""
+def normalizar_lugares(lugares, nicho="", cidade=""):
+    """Lista plana/normalizada dos lugares extraídos — p/ API e export Opportunity."""
     out = []
     for l in lugares or []:
         soc = _sociais(l)
+        insta_urls = _instagram_urls(l)
+        instagram = insta_urls[0] if insta_urls else ""
         if soc:
             presenca = "com_redes"
         elif l.get("website"):
             presenca = "so_site"
         else:
             presenca = "sem_nada"
-        partes = (l.get("categoria_endereco") or "").split("·")
+        partes = _partes_categoria_endereco(l)
+        redes = _redes(l)
+        whatsapp_urls = [u for u in soc if tipo_link(u) == "whatsapp"]
         out.append({
             "nome": l.get("nome") or "",
+            "nicho": nicho or "",
+            "cidade": cidade or "",
             "nota": l.get("nota") or "",
-            "categoria": partes[0].strip() if len(partes) > 1 else "",
-            "endereco": partes[-1].strip(),
+            "nota_google": l.get("nota") or "",
+            "avaliacoes_google": l.get("avaliacoes") or l.get("avaliacoes_google") or "",
+            "categoria": partes["categoria"],
+            "endereco": partes["endereco"],
             "horario": l.get("horario") or "",
             "telefone": l.get("tel") or "",
             "website": l.get("website") or "",
             "gmaps_url": l.get("gmaps_url") or "",
             "presenca": presenca,
-            "redes": [tipo_link(u) for u in soc],
+            "instagram": instagram,
+            "instagram_username": _instagram_username(instagram),
+            "instagram_urls": insta_urls,
+            "whatsapp": whatsapp_urls[0] if whatsapp_urls else "",
+            "outras_redes": [u for u in soc if tipo_link(u) != "instagram"],
+            "redes": redes,
             "sociais": soc,
         })
     return out
@@ -110,14 +159,60 @@ def para_markdown(nicho, cidade, cat):
     return "\n".join(L)
 
 
-def para_csv(cat):
+def para_csv(cat, nicho="", cidade=""):
+    """CSV compatível com o Opportunity.
+
+    Mantém campos humanos do Prospector e adiciona colunas normalizadas para que
+    o Opportunity não precise inferir cidade, categoria, Instagram, username ou
+    links de prospecção a partir de texto livre.
+    """
     # BOM: Excel no Windows reconhece UTF-8 (Açúcar, Poços…)
     buf = io.StringIO()
     buf.write("\ufeff")
     w = csv.writer(buf, lineterminator="\n")
-    w.writerow(["categoria", "nome", "nota", "endereco", "telefone", "website", "redes_sociais"])
-    for grupo, nome_g in ((cat["com"], "com_redes"), (cat["so_site"], "so_site"), (cat["sem"], "sem_nada")):
-        for l in grupo:
-            w.writerow([nome_g, l.get("nome") or "", l.get("nota") or "", _end(l),
-                        l.get("tel") or "", l.get("website") or "", " | ".join(_sociais(l))])
+    w.writerow([
+        "nome",
+        "nicho",
+        "cidade",
+        "categoria",
+        "endereco",
+        "telefone",
+        "website",
+        "instagram",
+        "instagram_username",
+        "instagram_urls",
+        "whatsapp",
+        "nota_google",
+        "avaliacoes_google",
+        "gmaps_url",
+        "horario",
+        "presenca",
+        "redes",
+        "redes_sociais",
+        "outras_redes",
+        "fonte",
+    ])
+    for l in normalizar_lugares(cat["com"] + cat["so_site"] + cat["sem"], nicho, cidade):
+        w.writerow([
+            l["nome"],
+            l["nicho"],
+            l["cidade"],
+            l["categoria"],
+            l["endereco"],
+            l["telefone"],
+            l["website"],
+            l["instagram"],
+            l["instagram_username"],
+            " | ".join(l["instagram_urls"]),
+            l["whatsapp"],
+            l["nota_google"],
+            l["avaliacoes_google"],
+            l["gmaps_url"],
+            l["horario"],
+            l["presenca"],
+            " | ".join(l["redes"]),
+            " | ".join(l["sociais"]),
+            " | ".join(l["outras_redes"]),
+            "google_maps_via_prospector",
+        ])
     return buf.getvalue()

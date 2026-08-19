@@ -166,7 +166,7 @@ async def exportar(request):
         fmt = (request.query_params.get("fmt") or "md").lower()
         nicho, cidade = dados.get("nicho", ""), dados.get("cidade", "")
         if fmt == "csv":
-            return _anexo(para_csv(cat), nome_arquivo(nicho, cidade, "csv"), "text/csv")
+            return _anexo(para_csv(cat, nicho, cidade), nome_arquivo(nicho, cidade, "csv"), "text/csv")
         return _anexo(para_markdown(nicho, cidade, cat),
                       nome_arquivo(nicho, cidade, "md"), "text/markdown")
     except Exception as e:
@@ -187,7 +187,7 @@ async def lugares(request):
     if erro:
         return erro
 
-    lista = normalizar_lugares(dados.get("lugares") or [])
+    lista = normalizar_lugares(dados.get("lugares") or [], dados.get("nicho", ""), dados.get("cidade", ""))
 
     q = (request.query_params.get("q") or "").strip().lower()
     categoria = (request.query_params.get("categoria") or "").strip().lower()
@@ -212,8 +212,12 @@ async def lugares(request):
 
 
 async def historico(request):
+    try:
+        limite = max(1, min(int(request.query_params.get("limite", 20)), 20))
+    except ValueError:
+        limite = 20
     rows = db.q("SELECT id, nicho, cidade, status, criado FROM jobs "
-                "ORDER BY criado DESC LIMIT 20", fetch=True)
+                "ORDER BY criado DESC LIMIT ?", (limite,), fetch=True)
     return JSONResponse([{"id": r[0], "nicho": r[1], "cidade": r[2],
                           "status": r[3], "criado": r[4]} for r in rows])
 

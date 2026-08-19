@@ -201,14 +201,23 @@ class Scraper:
 
 def _parse_card(nome: str, texto: str) -> dict:
     linhas = [l.strip() for l in texto.split("\n") if l.strip()]
-    nota, cat_end, horario = "", "", ""
+    nota, avaliacoes, cat_end, horario = "", "", "", ""
     for l in linhas:
         if l == nome:
             continue
         if not nota and re.match(r"^\d,\d", l):
             nota = l.split()[0][:3]
+            m = re.search(r"\(([\d\.,]+)\)", l)
+            if m:
+                avaliacoes = m.group(1).replace(".", "")
         elif not cat_end and "·" in l:
             cat_end = l
         elif not horario and re.match(r"^(Aberto|Fechado|Fecha)", l):
             horario = l
-    return {"nome": nome, "nota": nota, "categoria_endereco": cat_end, "horario": horario}
+    return {
+        "nome": nome,
+        "nota": nota,
+        "avaliacoes": avaliacoes,
+        "categoria_endereco": cat_end,
+        "horario": horario,
+    }
