@@ -47,6 +47,17 @@ summary { padding:12px 14px; cursor:pointer; font-weight:600 }
 #exportfb textarea { display:none; width:100%; min-height:160px; margin-top:8px; font:12px/1.4 ui-monospace,monospace;
   background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:8px }
 #erro { display:none; color:#c0392b; margin-bottom:16px }
+#hist { margin-top:28px; border-top:1px solid var(--line); padding-top:16px; font-size:.9rem }
+#hist h2 { font-size:1rem; margin-bottom:8px }
+#hist .empty { color:var(--mut) }
+#hist .job { display:flex; gap:8px; align-items:center; justify-content:space-between;
+  border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin-bottom:6px }
+#hist .meta { min-width:0 }
+#hist .meta b { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+#hist .meta small { color:var(--mut) }
+#hist .acts { display:flex; gap:6px; flex-shrink:0 }
+#hist .acts button, #hist .acts a { padding:4px 8px; border:1px solid var(--line); border-radius:7px;
+  color:var(--fg); background:transparent; text-decoration:none; font:inherit; cursor:pointer }
 </style>
 </head>
 <body>
@@ -65,6 +76,7 @@ summary { padding:12px 14px; cursor:pointer; font-weight:600 }
 <div id="listas"></div>
 <div id="acoes"></div>
 <div id="exportfb"></div>
+<div id="hist"><h2>Últimas buscas</h2><div class="empty">carregando...</div></div>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -72,6 +84,43 @@ const EMO = {instagram:'📸', facebook:'👥', tiktok:'🎵', linktree:'🔗', 
 const tipo = u => /instagram/i.test(u) ? 'instagram' : /facebook|fb\.com/i.test(u) ? 'facebook'
   : /tiktok/i.test(u) ? 'tiktok' : /linktr\.ee/i.test(u) ? 'linktree' : /wa\.me|whatsapp/i.test(u) ? 'whatsapp' : null;
 let ultimo = null;
+
+const escHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtData = ts => ts ? new Date(ts * 1000).toLocaleString('pt-BR', {dateStyle:'short', timeStyle:'short'}) : '';
+const statusTxt = s => s === 'ok' ? 'pronto' : s === 'rodando' ? 'rodando' : s === 'erro' ? 'erro' : s;
+
+async function carregarHistorico() {
+  const box = $('hist');
+  try {
+    const r = await fetch('/api/historico?limite=7');
+    const jobs = await r.json();
+    if (!Array.isArray(jobs) || !jobs.length) {
+      box.innerHTML = '<h2>Últimas buscas</h2><div class="empty">nenhuma busca ainda</div>';
+      return;
+    }
+    box.innerHTML = '<h2>Últimas buscas</h2>' + jobs.map(j => {
+      const nome = `${j.nicho || '—'} em ${j.cidade || '—'}`;
+      const ok = j.status === 'ok';
+      return `<div class="job">
+        <div class="meta"><b>${escHtml(nome)}</b><small>${statusTxt(j.status)} · ${fmtData(j.criado)}</small></div>
+        <div class="acts">
+          <button type="button" data-job="${j.id}" ${ok ? '' : 'disabled'}>Ver</button>
+          ${ok ? `<a href="/api/jobs/${j.id}/export?fmt=csv" download>CSV</a>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+  } catch (_) {
+    box.innerHTML = '<h2>Últimas buscas</h2><div class="empty">histórico indisponível</div>';
+  }
+}
+
+$('hist').addEventListener('click', ev => {
+  const btn = ev.target.closest('button[data-job]');
+  if (!btn) return;
+  mostrar(btn.dataset.job);
+});
+
+carregarHistorico();
 
 $('f').onsubmit = async e => {
   e.preventDefault();
@@ -112,6 +161,7 @@ async function mostrar(id) {
   $('fill').style.width = '100%';
   if (r.erro) return falha(r.erro);
   ultimo = {id, ...r};
+  carregarHistorico();
   const s = r.resumo || {};
   $('resumo').style.display = 'flex';
   $('resumo').innerHTML = `

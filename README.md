@@ -182,7 +182,7 @@ O CSV foi preparado para importação direta no **Opportunity**. Ele inclui, em 
 
 ### `GET /api/historico`
 
-Últimos 20 jobs (qualquer status), mais recentes primeiro.
+Últimos jobs (qualquer status), mais recentes primeiro. Aceita `?limite=7` — teto 20. A UI usa os últimos 7 para manter o histórico minimalista.
 
 ```json
 [ { "id": "3f2a9c8b7d1e", "nicho": "cafeterias", "cidade": "curitiba", "status": "ok", "criado": 1723824000 } ]

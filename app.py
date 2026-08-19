@@ -212,8 +212,12 @@ async def lugares(request):
 
 
 async def historico(request):
+    try:
+        limite = max(1, min(int(request.query_params.get("limite", 20)), 20))
+    except ValueError:
+        limite = 20
     rows = db.q("SELECT id, nicho, cidade, status, criado FROM jobs "
-                "ORDER BY criado DESC LIMIT 20", fetch=True)
+                "ORDER BY criado DESC LIMIT ?", (limite,), fetch=True)
     return JSONResponse([{"id": r[0], "nicho": r[1], "cidade": r[2],
                           "status": r[3], "criado": r[4]} for r in rows])
 
